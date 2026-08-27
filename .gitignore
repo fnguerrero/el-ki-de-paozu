@@ -1,0 +1,9 @@
+# Capturas de desarrollo: no hacen falta en el repositorio
+tools/capturas/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Capturas del registro de trabajo
+.nonstop/capturas/

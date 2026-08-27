@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dragon Ball — El Ki de Paozu</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+<script>
+// En localhost agrega un timestamp a cada script para saltear el cache del
+// navegador mientras se desarrolla. En produccion, carga normal.
+(function () {
+  var archivos = [
+    'js/config.js',
+    'js/pixel.js',
+    'js/art.js',
+    'js/input.js',
+    'js/audio.js',
+    'js/voz.js',
+    'js/sprites.js',
+    'js/data/transformaciones.js',
+    'js/data/niveles.js',
+    'js/data/sagas.js',
+    'js/progreso.js',
+    'js/ki.js',
+    'js/entity.js',
+    'js/enemy.js',
+    'js/level.js',
+    'js/player.js',
+    'js/ui.js',
+    'js/main.js',
+    'js/test.js'
+  ];
+  var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  var bust = local ? '?t=' + Date.now() : '';
+  archivos.forEach(function (f) {
+    document.write('<scr' + 'ipt src="' + f + bust + '"><\/scr' + 'ipt>');
+  });
+})();
+</script>
+</body>
+</html>

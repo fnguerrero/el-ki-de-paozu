@@ -24,7 +24,7 @@ const TRANSFORMACIONES = {
     id: 'ssj1', nombre: 'SUPER SAIYAN', costo: 25, drenaje: 4.5,
     dano: 2.4, vel: 1.35, def: 1.35, autoDano: 0, regenKi: .55,
     peloEstilo: 'ssj', peloPix: PAL.dorado, peloPixS: PAL.doradoS,
-    ojosPix: PAL.cyan, auraPix: PAL.dorado, brillo: .55, rayos: true,
+    ojosPix: PAL.cyan, auraPix: PAL.dorado, brillo: .55, rayos: true, electricidad: 0.3,
     desbloqueada: false,
     disparo: { nombre: 'DOBLE RAFAGA', cant: 2, r: 3, vel: 5.2, dano: 0.6, disp: 0.10 },
     desc: 'La leyenda. Sostenible: el caballo de batalla de todo el juego.'
@@ -34,7 +34,7 @@ const TRANSFORMACIONES = {
     id: 'ssj2', nombre: 'SUPER SAIYAN 2', costo: 45, drenaje: 9,
     dano: 3.6, vel: 1.55, def: 1.5, autoDano: 0, regenKi: .35,
     peloEstilo: 'ssj', peloPix: PAL.dorado, peloPixS: PAL.doradoS,
-    ojosPix: PAL.cyan, auraPix: PAL.doradoL, brillo: .8, rayos: true,
+    ojosPix: PAL.cyan, auraPix: PAL.doradoL, brillo: .8, rayos: true, electricidad: 1.0,
     desbloqueada: false,
     disparo: { nombre: 'TRIPLE', cant: 3, r: 3, vel: 5.6, dano: 0.5, disp: 0.16 },
     desc: 'Mas punzante y con electricidad. El doble de drenaje que SSJ.'
@@ -44,7 +44,8 @@ const TRANSFORMACIONES = {
     id: 'ssj3', nombre: 'SUPER SAIYAN 3', costo: 70, drenaje: 20,
     dano: 5.5, vel: 1.75, def: 1.6, autoDano: 2.5, regenKi: .12,
     peloEstilo: 'ssj3', peloPix: PAL.dorado, peloPixS: PAL.doradoS,
-    ojosPix: PAL.cyan, auraPix: PAL.doradoL, brillo: 1, rayos: true,
+    ojosPix: PAL.cyan, auraPix: PAL.doradoL, brillo: 1, rayos: true, electricidad: 1.25,
+    melena: 30,
     desbloqueada: false,
     disparo: { nombre: 'LLUVIA', cant: 5, r: 2, vel: 6.0, dano: 0.4, disp: 0.30 },
     desc: 'Devastador y suicida: te come el Ki y la vida. Ventanas de 5 segundos.'
@@ -54,7 +55,8 @@ const TRANSFORMACIONES = {
     id: 'ssj4', nombre: 'SUPER SAIYAN 4', costo: 80, drenaje: 14,
     dano: 6.5, vel: 1.85, def: 2.0, autoDano: 1.2, regenKi: .2,
     peloEstilo: 'ssj4', peloPix: PAL.pelo, peloPixS: PAL.peloS,
-    ojosPix: PAL.dorado, auraPix: PAL.rojo, brillo: .9, rayos: true,
+    ojosPix: PAL.dorado, auraPix: PAL.rojo, brillo: .9, rayos: true, electricidad: 0.6,
+    melena: 18, cola: '#c0392b',
     desbloqueada: false, requiere: 'ozaru',
     disparo: { nombre: 'ZARPAZO', cant: 1, r: 7, vel: 4.2, dano: 2.2, disp: 0 },
     desc: 'Solo tras dominar el Ozaru. Pelaje rojo, control total.'
@@ -74,7 +76,7 @@ const TRANSFORMACIONES = {
     id: 'blue', nombre: 'SSJ BLUE', costo: 75, drenaje: 13,
     dano: 6.8, vel: 2.0, def: 1.9, autoDano: 0, regenKi: .3,
     peloEstilo: 'ssj', peloPix: PAL.cyan, peloPixS: '#1f7fa8',
-    ojosPix: PAL.cyan, auraPix: PAL.cyan, brillo: 1, rayos: true,
+    ojosPix: PAL.cyan, auraPix: PAL.cyan, brillo: 1, rayos: true, electricidad: 0.7,
     desbloqueada: false, requiere: 'dios',
     disparo: { nombre: 'KIENZAN', cant: 2, r: 5, vel: 7.0, dano: 1.8, disp: 0.22 },
     desc: 'Ki divino en forma Super Saiyan. Control absoluto, costo enorme.'
@@ -83,9 +85,13 @@ const TRANSFORMACIONES = {
   ui: {
     id: 'ui', nombre: 'ULTRA INSTINTO', costo: 95, drenaje: 26,
     dano: 8.0, vel: 2.2, def: 2.4, autoDano: 0, regenKi: 0,
-    esquivaAuto: .55,
+    // A este nivel casi no llegan ni los dioses: esquiva solo, atraviesa a
+    // los enemigos y flota, como si la gravedad no lo agarrara.
+    esquivaAuto: .92,
+    atraviesa: true,
+    gravedad: 0.22,
     peloEstilo: 'goku', peloPix: '#e8eaf6', peloPixS: '#a8b0c8',
-    ojosPix: '#c0c8e0', auraPix: '#dfe6ff', brillo: 1.2, rayos: true,
+    ojosPix: '#c0c8e0', auraPix: '#dfe6ff', brillo: 1.2, rayos: true, electricidad: 0.45,
     desbloqueada: false,
     disparo: { nombre: 'ROMPE ESPACIO', cant: 4, r: 4, vel: 9.0, dano: 1.4, disp: 0.12 },
     desc: 'Esquiva sola el 55% de los golpes. Dura lo que dure el Ki.'

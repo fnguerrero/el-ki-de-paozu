@@ -16,10 +16,74 @@ function matrizPose(pose, t, dano) {
   return GOKU[nombre + sufijo] || GOKU[nombre] || GOKU.idle;
 }
 
+// Melena de SSJ3: cae desde la nuca hasta abajo de las rodillas y se mueve
+// sola. Se dibuja como capa aparte y no como sprite propio porque asi vale
+// para las 15 poses sin multiplicar el arte por cuatro.
+function dibujarMelena(x, y, facing, color, sombra, t, largo) {
+  const cx = Math.round(x);
+  const nuca = Math.round(y) - 30;      // arranca en la nuca, no en la coronilla
+  const alto = largo || 26;
+
+  // Mechones separados, no un bloque: un rectangulo continuo se lee como una
+  // mancha detras del personaje, no como pelo.
+  const mechones = [
+    { off: -12, ancho: 4, largo: 0.70, fase: 0.0 },
+    { off: -8, ancho: 5, largo: 0.88, fase: 0.9 },
+    { off: -3, ancho: 6, largo: 1.00, fase: 1.7 },
+    { off: 3, ancho: 6, largo: 0.95, fase: 2.4 },
+    { off: 8, ancho: 5, largo: 0.80, fase: 3.1 },
+    { off: 12, ancho: 4, largo: 0.62, fase: 3.9 }
+  ];
+
+  mechones.forEach(m => {
+    const alt = Math.round(alto * m.largo);
+    for (let i = 0; i < alt; i++) {
+      const f = i / alt;
+      // Ondula mas hacia la punta, cada mechon con su propio ritmo
+      const onda = Math.sin(t * 2.4 + m.fase + f * 3) * f * 3;
+      const px = cx + m.off - facing * (1 + f * 3) + onda;
+      const w = Math.max(1, Math.round(m.ancho * (1 - f * 0.55)));
+      Px.rect(px - w / 2, nuca + i, w, 1, f > 0.75 ? sombra : color);
+    }
+    // Punta en pico
+    const f = 1;
+    const onda = Math.sin(t * 2.4 + m.fase + f * 3) * f * 3;
+    const px = cx + m.off - facing * 4 + onda;
+    Px.rect(px, nuca + alt, 1, 3, color);
+  });
+}
+
+// Cola de SSJ4: sale de la cintura y se mueve como latigo.
+function dibujarCola(x, y, facing, color, sombra, t) {
+  const bx = Math.round(x) - facing * 5;
+  const by = Math.round(y) - 14;
+  let px = bx, py = by;
+  for (let i = 0; i < 16; i++) {
+    const f = i / 16;
+    const ang = Math.sin(t * 2.6 + f * 2.4) * 0.5 + 0.35;
+    px -= facing * (1.1 + Math.cos(ang) * 0.5);
+    py += Math.sin(ang + f * 1.6) * 1.5 - 0.35;
+    const w = Math.max(2, Math.round(5 - f * 2));
+    Px.rect(px - w / 2, py, w, w, i % 4 === 0 ? sombra : color);
+  }
+  // Punta peluda
+  Px.disco(px, py, 3, color);
+  Px.disco(px - 1, py - 1, 2, sombra);
+}
+
 // o = { x, y (pies), facing, pose, t, tintas, aura, auraFuerte }
 function dibujarPeleador(o) {
   if (o.aura) {
-    dibujarAura(o.x, o.y, o.aura, o.auraFuerte, o.t || 0, o.fuerzaAura, o.rayos);
+    dibujarAura(o.x, o.y, o.aura, o.auraFuerte, o.t || 0, o.fuerzaAura,
+                o.rayos, o.electricidad);
+  }
+  // El pelo largo va DETRAS del cuerpo, la cola tambien
+  const t = o.t || 0;
+  if (o.melena) {
+    dibujarMelena(o.x, o.y, o.facing, o.melena.color, o.melena.sombra, t, o.melena.largo);
+  }
+  if (o.cola) {
+    dibujarCola(o.x, o.y, o.facing, o.cola.color, o.cola.sombra, t);
   }
   dibujarMatriz(matrizPose(o.pose, o.t || 0, o.dano || 0), o.x, o.y, o.facing, o.tintas);
 }
@@ -27,7 +91,7 @@ function dibujarPeleador(o) {
 // EL AURA. Es lo que dice "este tipo tiene mucho poder", asi que se dibuja
 // por capas: resplandor, lenguas de fuego que suben, chispas que orbitan,
 // rayos, y ondas en el piso. `fuerza` (0..1.4) escala todo.
-function dibujarAura(x, y, color, fuerte, t, fuerza, rayos) {
+function dibujarAura(x, y, color, fuerte, t, fuerza, rayos, electricidad) {
   const f = fuerza === undefined ? (fuerte ? 1 : 0.5) : fuerza;
   if (f <= 0) return;
 
@@ -95,24 +159,46 @@ function dibujarAura(x, y, color, fuerte, t, fuerza, rayos) {
   // Nacen del cuerpo y bajan quebrandose, como cuando Gohan pasa a SSJ2. No
   // son rayitas al azar en el aire: salen del personaje.
   if (rayos) {
-    const cantidad = Math.round(2 + f * 3);
+    // `electricidad` multiplica: SSJ2 y SSJ3 tienen que estar cubiertos de
+    // rayos, no tener dos rayitas como el SSJ comun.
+    const elec = electricidad === undefined ? 0.4 : electricidad;
+    // Ojo con la cantidad: pasados ~8 rayos dejan de leerse como electricidad
+    // y tapan al personaje. La sensacion de "mucha" viene del largo y de las
+    // ramas, no de llenar la pantalla.
+    const cantidad = Math.min(8, Math.round(2 + elec * 4));
     for (let i = 0; i < cantidad; i++) {
       // Cada rayo vive unos pocos frames y despues aparece otro en otro lado
       const semilla = Math.floor(t * 9) + i * 37;
       if (semilla % 3 === 0) continue;
       const lado = (semilla % 2) ? 1 : -1;
-      let px = cx + lado * (6 + (semilla % 7));
-      let py = centroY - 16 + (semilla % 26);
-      const tramos = 4 + (semilla % 3);
+      let px = cx + lado * (4 + (semilla % 5));
+      let py = centroY - 14 + (semilla % 24);
+      const tramos = 3 + (semilla % 3) + Math.round(elec * 2);
       for (let k = 0; k < tramos; k++) {
-        const nx = px + lado * rnd(2, 7);
-        const ny = py + rnd(2, 9);
+        const nx = px + lado * rnd(1.5, 5);
+        const ny = py + rnd(1.5, 6);
         Px.linea(px, py, nx, ny, k === 0 ? PAL.blanco : color);
-        // Ramita que se abre
-        if (k === 1) Px.linea(nx, ny, nx + lado * 4, ny - 3, color);
+        // Ramas que se abren: cuantas mas, mas cargado se ve
+        if (k === 1 || (elec > 0.8 && k === 3)) {
+          Px.linea(nx, ny, nx + lado * 4, ny - 3, color);
+        }
+        if (elec > 1 && k === 2) {
+          Px.linea(nx, ny, nx - lado * 3, ny + 4, PAL.blanco);
+        }
         px = nx; py = ny;
       }
     }
+    // Con mucha electricidad, arcos sueltos girando alrededor del cuerpo
+    if (elec > 0.8) {
+      for (let k = 0; k < 3; k++) {
+        const ang = t * 3.5 + k * 2.1;
+        const rr = 15 + f * 8;
+        const ax = cx + Math.cos(ang) * rr;
+        const ay = centroY + Math.sin(ang) * rr * 1.3;
+        Px.linea(ax, ay, ax + rnd(-4, 4), ay + rnd(-4, 4), PAL.blanco);
+      }
+    }
+
     // Chispazo: un arco corto arriba del cuerpo, no un aro completo. Un aro
     // entero se leia como una burbuja de jabon alrededor del personaje.
     if (Math.floor(t * 5) % 9 === 0) {
@@ -125,8 +211,14 @@ function dibujarAura(x, y, color, fuerte, t, fuerza, rayos) {
 
   // --- 5. Onda en el piso: el suelo no aguanta tanto Ki ---
   if (f > 0.6) {
-    const anillo = Math.floor((t * 1.6) % 1 * (20 + f * 22));
-    Px.elipse(cx, pies, 10 + anillo, Math.max(1, (10 + anillo) * 0.22), color);
+    // Un ANILLO que se expande, no una elipse rellena: rellena tapaba al
+    // personaje entero con una mancha de color.
+    const fase = (t * 1.6) % 1;
+    const rx = Math.round(8 + fase * (16 + f * 18));
+    const ry = Math.max(1, Math.round(rx * 0.26));
+    for (let a = 0; a < Math.PI * 2; a += 0.24) {
+      Px.punto(cx + Math.cos(a) * rx, pies + Math.sin(a) * ry, color);
+    }
   }
 }
 

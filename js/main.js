@@ -18,6 +18,8 @@ const Juego = {
   sagaIdx: 0,
   t: 0,
   tEstado: 0,
+  slowmo: 0,          // frames de camara lenta que quedan
+  slowmoFuerza: 0.3,  // que tan lento va mientras dura
   formaDespertada: false,
 
   get saga() { return SAGAS[this.sagaIdx]; },
@@ -38,13 +40,7 @@ const Juego = {
 
     Input.init();
     Voz.init();
-    // Si el sistema no tiene voces en español, la voz suena rara leyendo
-    // castellano: se avisa una vez y se puede apagar con M.
-    setTimeout(() => {
-      if (Voz.lista && Voz.sinEspanol) {
-        UI.mostrar('SIN VOZ EN ESPANOL INSTALADA - M PARA SILENCIAR', 260);
-      }
-    }, 2500);
+
     this.jug = new Jugador();
     this.cargarSaga(0);
 
@@ -58,7 +54,11 @@ const Juego = {
         // si no las teclas de esos frames se perderian y el juego se sentiria
         // trabado justo despues de cada golpe fuerte.
         try {
-          if (this.update(1 / 60) !== false) Input.endFrame();
+          // Camara lenta: se le pasa un dt mas chico a todo el juego, asi la
+          // fisica y las animaciones se frenan juntas.
+          const escala = this.slowmo > 0 ? this.slowmoFuerza : 1;
+          if (this.slowmo > 0) this.slowmo--;
+          if (this.update((1 / 60) * escala) !== false) Input.endFrame();
         } catch (e) {
           // Un error en un frame no puede congelar la partida entera: se
           // anota, se sigue, y si se repite se muestra en pantalla.
@@ -75,6 +75,12 @@ const Juego = {
 
   // Un error suelto no tiene que matar el juego, pero tampoco puede quedar
   // invisible: se cuenta y a partir de unos cuantos se avisa en pantalla.
+  // Frena el tiempo unos frames. `fuerza` mas baja = mas lento.
+  camaraLenta(frames, fuerza) {
+    this.slowmo = Math.max(this.slowmo, frames);
+    this.slowmoFuerza = fuerza === undefined ? 0.3 : fuerza;
+  },
+
   registrarError(e) {
     this.errores = (this.errores || 0) + 1;
     this.ultimoError = (e && e.message) ? e.message : String(e);
@@ -481,6 +487,7 @@ const Juego = {
           }
         }
       } else if (aabb({ x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2 }, jug.caja)) {
+        // recibirGolpe ya resuelve la esquiva automatica del Ultra Instinto
         jug.recibirGolpe(p.dano, signo(p.vx) || 1);
         return false;
       }

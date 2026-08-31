@@ -25,7 +25,7 @@ const PALETAS_MUSICA = {
                melodia: [349.2, 0, 415.3, 0, 466.2, 0, 415.3, 0, 392, 0, 349.2, 0, 311.1, 0, 349.2, 0] }
 };
 
-const Sonido = {
+let Sonido = {
   ctx: null,
   roto: false,
   master: null,
@@ -178,6 +178,26 @@ const Sonido = {
     this.ruido(0.05, { corte: 500 + rnd(-120, 120), corteFinal: 180, vol: 0.07 });
   },
 
+  // Caer al piso. `fuerza` (0..1) sale de la velocidad de caida: un saltito
+  // suena a nada y una caida larga a golpe seco con polvo.
+  aterrizar(fuerza) {
+    const f = fuerza === undefined ? 0.4 : clamp(fuerza, 0, 1);
+    this.ruido(0.05 + f * 0.13, {
+      corte: 900 - f * 400, corteFinal: 120, vol: 0.06 + f * 0.20
+    });
+    if (f > 0.45) {
+      // Solo las caidas fuertes tienen "cuerpo" grave
+      this.tono(90 - f * 25, 0.10 + f * 0.10, { tipo: 'triangle', barrido: 35, vol: f * 0.20 });
+    }
+  },
+
+  // Bloquear un golpe: metalico y corto, para que se distinga de recibirlo.
+  guardia() {
+    this.ruido(0.07, { tipoFiltro: 'bandpass', corte: 2600, vol: 0.20 });
+    this.tono(520, 0.09, { tipo: 'square', barrido: 240, vol: 0.13 });
+    this.tono(780, 0.06, { tipo: 'square', barrido: 340, vol: 0.08 });
+  },
+
   golpeFuerte() {
     this.ruido(0.22, { corte: 2200, corteFinal: 160, vol: 0.42 });
     this.tono(120, 0.20, { tipo: 'square', barrido: 45, vol: 0.26 });
@@ -212,18 +232,26 @@ const Sonido = {
 
   // La transformacion es el momento importante del juego: acorde ascendente.
   transformar(nivel) {
-    const base = 220 * (1 + (nivel || 0) * 0.12);
-    [0, 0.09, 0.18].forEach((retraso, i) => {
+    const n = nivel || 0;
+    const base = 200 * (1 + n * 0.1);
+    // Acorde ascendente, una nota atras de la otra
+    [0, 0.07, 0.14, 0.22].forEach((retraso, i) => {
       setTimeout(() => {
-        this.tono(base * Math.pow(1.5, i), 0.5, {
-          tipo: 'sawtooth', barrido: base * Math.pow(1.5, i) * 2.6, vol: 0.20
+        this.tono(base * Math.pow(1.5, i), 0.7, {
+          tipo: 'sawtooth', barrido: base * Math.pow(1.5, i) * 3, vol: 0.20
         });
       }, retraso * 1000);
     });
-    this.ruido(0.9, { corte: 300, corteFinal: 5200, vol: 0.26 });
-    this.tono(80, 0.9, { tipo: 'triangle', barrido: 300, vol: 0.18 });
-    // El grito es la mitad de la transformacion
-    this.grito(0.55 + (nivel || 0) * 0.07, 1.1 + (nivel || 0) * 0.1);
+    // Barrido de energia subiendo
+    this.ruido(1.3, { corte: 200, corteFinal: 7000, vol: 0.30 });
+    this.tono(60, 1.3, { tipo: 'triangle', barrido: 420, vol: 0.24 });
+    // El grito, que es la mitad del momento
+    this.grito(0.7 + n * 0.06, 1.5 + n * 0.12);
+    // Y el estallido al terminar de subir
+    setTimeout(() => {
+      this.ruido(0.5, { corte: 5000, corteFinal: 120, vol: 0.42 });
+      this.tono(52, 0.6, { tipo: 'square', barrido: 26, vol: 0.3 });
+    }, 900 + n * 60);
   },
 
   salto() {
@@ -291,59 +319,78 @@ const Sonido = {
     return curva;
   },
 
-  // Grito. Tres armonicos con vibrato, pasando por distorsion y por dos
-  // formantes que se abren durante el grito (de "aaa" cerrada a abierta).
+  // Grito. Varias capas apiladas: el cuerpo del grito, un coro desafinado
+  // encima que lo engorda, un sub grave que lo sostiene y un eco corto que le
+  // da tamaño. Es lo que separa un "aaah" de un grito de transformacion.
   grito(intensidad, duracion) {
     if (!this.listo || this.silenciado) return;
     const inten = clamp(intensidad === undefined ? 0.5 : intensidad, 0, 1);
-    const dur = duracion || (0.8 + inten * 1.1);
+    const dur = duracion || (0.9 + inten * 1.4);
     const t = this.ctx.currentTime;
-    const base = 138 + inten * 120;
+    const base = 132 + inten * 130;
 
     const dist = this.ctx.createWaveShaper();
-    dist.curve = this._curvaDistorsion(0.35 + inten * 0.5);
-    dist.oversample = '2x';
+    dist.curve = this._curvaDistorsion(0.45 + inten * 0.55);
+    dist.oversample = '4x';
 
-    // Formantes que se abren: da la sensacion de que el grito "crece"
+    // Formantes que se abren durante el grito
     const f1 = this.ctx.createBiquadFilter();
-    f1.type = 'bandpass'; f1.Q.value = 6;
-    f1.frequency.setValueAtTime(560, t);
-    f1.frequency.linearRampToValueAtTime(820, t + dur * 0.45);
-    f1.frequency.linearRampToValueAtTime(660, t + dur);
+    f1.type = 'bandpass'; f1.Q.value = 5;
+    f1.frequency.setValueAtTime(520, t);
+    f1.frequency.linearRampToValueAtTime(880, t + dur * 0.45);
+    f1.frequency.linearRampToValueAtTime(700, t + dur);
 
     const f2 = this.ctx.createBiquadFilter();
-    f2.type = 'bandpass'; f2.Q.value = 8;
-    f2.frequency.setValueAtTime(1000, t);
-    f2.frequency.linearRampToValueAtTime(1450, t + dur * 0.5);
+    f2.type = 'bandpass'; f2.Q.value = 7;
+    f2.frequency.setValueAtTime(980, t);
+    f2.frequency.linearRampToValueAtTime(1600, t + dur * 0.5);
 
     const f3 = this.ctx.createBiquadFilter();
-    f3.type = 'bandpass'; f3.Q.value = 5;
-    f3.frequency.value = 2600;                 // brillo, la parte "rasgada"
+    f3.type = 'bandpass'; f3.Q.value = 4;
+    f3.frequency.value = 2800;
 
     const mezcla = this.ctx.createGain();
     const g = this.ctx.createGain();
-    // Crescendo y caida: no arranca a todo volumen
+    const pico = 0.24 + inten * 0.30;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.10 + inten * 0.12, t + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.16 + inten * 0.20, t + dur * 0.55);
+    g.gain.exponentialRampToValueAtTime(pico * 0.6, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(pico, t + dur * 0.55);
+    g.gain.setValueAtTime(pico, t + dur * 0.72);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
-    // Vibrato compartido: la garganta tiembla igual en todos los armonicos
+    // Eco: dos repeticiones cortas. Sin esto el grito suena "chico".
+    const eco = this.ctx.createDelay(0.5);
+    eco.delayTime.value = 0.14;
+    const ecoG = this.ctx.createGain();
+    ecoG.gain.value = 0.28 + inten * 0.16;
+    eco.connect(ecoG); ecoG.connect(eco);
+    ecoG.connect(this.master);
+
     const lfo = this.ctx.createOscillator();
     const lfoG = this.ctx.createGain();
-    lfo.frequency.setValueAtTime(5.5, t);
-    lfo.frequency.linearRampToValueAtTime(8.5 + inten * 3, t + dur);
-    lfoG.gain.value = base * 0.055;
+    lfo.frequency.setValueAtTime(5, t);
+    lfo.frequency.linearRampToValueAtTime(9 + inten * 4, t + dur);
+    lfoG.gain.value = base * 0.06;
     lfo.connect(lfoG);
 
     const oscs = [];
-    [[1, 'sawtooth', 1], [2, 'square', 0.4], [3, 'sawtooth', 0.22]].forEach(a => {
+    // Coro: los desafinados son los que engordan la voz
+    const capas = [
+      [1, 'sawtooth', 1.0, 1.000],
+      [1, 'sawtooth', 0.55, 1.012],
+      [1, 'square',   0.40, 0.991],
+      [2, 'square',   0.35, 1.004],
+      [3, 'sawtooth', 0.20, 1.000],
+      [0.5, 'triangle', 0.7, 1.000]     // sub: el peso del grito
+    ];
+    capas.forEach(a => {
       const o = this.ctx.createOscillator();
       const og = this.ctx.createGain();
       o.type = a[1];
-      o.frequency.setValueAtTime(base * a[0] * 0.85, t);
-      o.frequency.linearRampToValueAtTime(base * a[0] * (1.2 + inten * 0.3), t + dur * 0.4);
-      o.frequency.linearRampToValueAtTime(base * a[0] * 0.9, t + dur);
+      const f0 = base * a[0] * a[3];
+      o.frequency.setValueAtTime(f0 * 0.8, t);
+      o.frequency.linearRampToValueAtTime(f0 * (1.25 + inten * 0.35), t + dur * 0.4);
+      o.frequency.linearRampToValueAtTime(f0 * 0.88, t + dur);
       og.gain.value = a[2];
       lfoG.connect(o.frequency);
       o.connect(og); og.connect(dist);
@@ -352,16 +399,19 @@ const Sonido = {
 
     dist.connect(f1); dist.connect(f2); dist.connect(f3);
     f1.connect(mezcla); f2.connect(mezcla); f3.connect(mezcla);
-    mezcla.connect(g); g.connect(this.master);
+    mezcla.connect(g);
+    g.connect(this.master);
+    g.connect(eco);
 
     oscs.forEach(o => { o.start(t); o.stop(t + dur + 0.05); });
     lfo.start(t); lfo.stop(t + dur + 0.05);
 
-    // Aire de la garganta, que crece con el grito
+    // Aire de garganta y un golpe grave al arrancar
     this.ruido(dur * 0.9, {
-      tipoFiltro: 'bandpass', corte: 800, corteFinal: 1900,
-      vol: 0.04 + inten * 0.06
+      tipoFiltro: 'bandpass', corte: 700, corteFinal: 2200,
+      vol: 0.05 + inten * 0.08
     });
+    this.tono(70 - inten * 20, 0.5, { tipo: 'triangle', barrido: 40, vol: 0.16 + inten * 0.1 });
   },
 
   dash() {
@@ -548,6 +598,60 @@ window.addEventListener('focus', function () { Sonido.despertarAudio(); });
 window.addEventListener('pagehide', function () { Sonido.apagar(); });
 window.addEventListener('beforeunload', function () { Sonido.apagar(); });
 
+/* ---- señal de silencio entre pestañas ----
+   localStorage avisa a las demás pestañas del mismo origen cuando cambia. Una
+   página cualquiera de fnguerrero.github.io puede escribir esta marca y todos
+   los juegos abiertos se callan solos, sin tener que silenciar el navegador
+   entero desde Windows (que también apagaba YouTube). */
+(function () {
+  function porSenal(e) {
+    if (e.key !== 'juegos.silencio') return;
+    if (typeof Sonido !== 'undefined') Sonido.apagar();
+  }
+  window.addEventListener('storage', porSenal);
+
+/* ---- auto-silencio por inactividad ----
+   La última red, y la única que no depende de nada externo: ni de que la pestaña
+   se oculte, ni del origen, ni de que llegue una señal. Tres minutos sin tocar
+   una tecla y el juego se calla; vuelve solo al primer toque. Es lo que evita
+   que una pestaña olvidada quede sonando toda la tarde. */
+(function () {
+  var ESPERA = 3 * 60 * 1000;
+  var reloj = null;
+  var dormido = false;
+
+  function callar() {
+    dormido = true;
+    if (typeof Sonido !== 'undefined') Sonido.apagar();
+  }
+
+  function reanudar() {
+    if (!dormido) return;
+    dormido = false;
+    if (typeof Sonido !== 'undefined') Sonido.despertarAudio();
+  }
+
+  function reiniciar() {
+    reanudar();
+    if (reloj) clearTimeout(reloj);
+    reloj = setTimeout(callar, ESPERA);
+  }
+
+  ['keydown', 'pointerdown', 'touchstart', 'wheel'].forEach(function (ev) {
+    window.addEventListener(ev, reiniciar, { passive: true });
+  });
+  reiniciar();
+})();
+
+
+  // Si la marca ya estaba puesta al abrir, no se arranca sonando
+  try {
+    var marca = parseInt(window.localStorage.getItem('juegos.silencio'), 10);
+    if (marca && Date.now() - marca < 4000) { if (typeof Sonido !== 'undefined') Sonido.apagar(); }
+  } catch (err) { /* localStorage puede fallar en file:// */ }
+})();
+
+
 // Envuelve todos los metodos de Sonido en try/catch. El audio es un adorno:
 // que falle no puede frenar la partida. Se hace aca, una sola vez, en vez de
 // repetir try/catch en cada efecto.
@@ -567,5 +671,23 @@ window.addEventListener('beforeunload', function () { Sonido.apagar(); });
       try { return fn.apply(this, arguments); }
       catch (e) { return undefined; }
     };
+  });
+
+  // Y el caso que ya rompio una partida: pedirle a Sonido un efecto que no
+  // existe. Antes tiraba "Sonido.X is not a function" y cortaba la funcion que
+  // lo llamaba a la mitad, dejando al jugador sin poder volar porque la linea
+  // de abajo nunca corria. Ahora un efecto que falta simplemente no suena, y
+  // queda avisado en la consola una sola vez para poder escribirlo.
+  const avisados = {};
+  Sonido = new Proxy(Sonido, {
+    get(obj, prop) {
+      if (prop in obj) return obj[prop];
+      if (typeof prop !== 'string' || prop.startsWith('_')) return undefined;
+      if (!avisados[prop]) {
+        avisados[prop] = true;
+        console.warn('[audio] falta el efecto Sonido.' + prop + '(): no suena nada');
+      }
+      return function () { return undefined; };
+    }
   });
 })();

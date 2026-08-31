@@ -7,69 +7,91 @@
 //
 // Todo es opcional: si el navegador no tiene voces, el juego sigue igual.
 
+// Voz de personaje sintetizada.
+//
+// NO se usa la sintesis de voz del navegador (speechSynthesis): esa lee el
+// texto con la voz que tenga instalada el sistema, que en la practica es una
+// voz en ingles leyendo castellano. Suena horrible y no se puede corregir
+// desde el juego.
+//
+// En su lugar, lo que hacen los juegos sin doblaje: una nota corta por silaba,
+// con el tono siguiendo las vocales del texto. No dice palabras de verdad pero
+// se lee como alguien hablando, y encaja con el resto del audio, que tambien
+// es todo sintetizado.
+
 const Voz = {
   activa: true,
-  lista: false,
-  vozEs: null,
+  lista: true,
   ultima: 0,
   silenciada: false,
 
-  init() {
-    if (!('speechSynthesis' in window)) return;
-    const cargar = () => {
-      const voces = window.speechSynthesis.getVoices();
-      if (!voces || !voces.length) return;
-      // Preferimos una voz en español; si no hay, cualquiera sirve
-      const enEspanol = voces.filter(v => /^es([-_]|$)/i.test(v.lang));
-      // Preferimos voz femenina en español: el timbre de Goku en el anime es
-      // agudo, y con pitch alto una voz masculina suena a dibujito roto.
-      this.vozEs = enEspanol.find(v => /female|mujer|helena|sabina|paulina|laura|monica/i.test(v.name))
-                || enEspanol[0]
-                || voces[0];
-      this.sinEspanol = enEspanol.length === 0;
-      this.lista = true;
-    };
-    cargar();
-    window.speechSynthesis.onvoiceschanged = cargar;
+  init() { /* no necesita nada: usa el mismo motor que el resto del audio */ },
+
+  // Timbre de cada personaje. `base` es la nota central de su voz.
+  PERFILES: {
+    goku:    { base: 300, ritmo: 0.062, tipo: 'square',   vol: 0.10 },
+    gohan:   { base: 360, ritmo: 0.058, tipo: 'square',   vol: 0.09 },
+    aliado:  { base: 250, ritmo: 0.065, tipo: 'triangle', vol: 0.09 },
+    villano: { base: 130, ritmo: 0.080, tipo: 'sawtooth', vol: 0.11 },
+    dragon:  { base: 80,  ritmo: 0.100, tipo: 'sawtooth', vol: 0.13 }
   },
 
-  // `quien` cambia el timbre: goku agudo y rapido, los villanos graves.
-  PERFILES: {
-    goku:    { pitch: 1.75, rate: 1.15, vol: 0.9 },
-    gohan:   { pitch: 1.9,  rate: 1.2,  vol: 0.85 },
-    aliado:  { pitch: 1.3,  rate: 1.05, vol: 0.8 },
-    villano: { pitch: 0.55, rate: 0.9,  vol: 0.9 },
-    dragon:  { pitch: 0.3,  rate: 0.75, vol: 1.0 }
-  },
+  // Cuanto sube o baja el tono cada vocal: es lo que da sensacion de palabras.
+  VOCALES: { a: 1.00, e: 1.14, i: 1.32, o: 0.90, u: 0.80 },
 
   decir(texto, quien, opts) {
-    if (!this.lista || !this.activa || this.silenciada || !texto) return;
+    if (!this.activa || this.silenciada || !texto) return;
+    if (!Sonido.listo || Sonido.silenciado) return;
     const o = opts || {};
     const ahora = performance.now();
-    // No pisar una linea con otra ni hablar encima de si mismo
     if (!o.urgente && ahora - this.ultima < (o.espera || 1400)) return;
     this.ultima = ahora;
 
-    try {
-      if (o.corta) window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(texto);
-      const p = this.PERFILES[quien] || this.PERFILES.goku;
-      if (this.vozEs) u.voice = this.vozEs;
-      u.lang = (this.vozEs && this.vozEs.lang) || 'es-AR';
-      u.pitch = clamp(p.pitch * (o.pitch || 1), 0, 2);
-      u.rate = clamp(p.rate * (o.rate || 1), 0.1, 10);
-      u.volume = p.vol;
-      window.speechSynthesis.speak(u);
-    } catch (e) { /* sin voz, el juego sigue igual */ }
+    const p = this.PERFILES[quien] || this.PERFILES.goku;
+    const t0 = Sonido.ctx.currentTime;
+    const letras = texto.toLowerCase().replace(/[^a-záéíóúñ ]/g, '');
+
+    let i = 0, silaba = 0;
+    while (i < letras.length && silaba < 22) {
+      const c = letras[i++];
+      const v = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u' }[c] || c;
+      if (!this.VOCALES[v]) continue;
+
+      const cuando = t0 + silaba * p.ritmo * (o.rate ? 1 / o.rate : 1);
+      const dur = p.ritmo * 0.85;
+      const curva = 1 + Math.sin(silaba * 0.7) * 0.12;
+      const freq = p.base * this.VOCALES[v] * curva * (o.pitch || 1);
+
+      try {
+        const osc = Sonido.ctx.createOscillator();
+        const g = Sonido.ctx.createGain();
+        const filtro = Sonido.ctx.createBiquadFilter();
+        filtro.type = 'bandpass';
+        filtro.frequency.value = freq * 2.6;
+        filtro.Q.value = 3;
+
+        osc.type = p.tipo;
+        // Cada silaba arranca abajo y sube: es el "ataque" de la voz
+        osc.frequency.setValueAtTime(freq * 0.82, cuando);
+        osc.frequency.linearRampToValueAtTime(freq, cuando + dur * 0.35);
+        osc.frequency.linearRampToValueAtTime(freq * 0.94, cuando + dur);
+
+        g.gain.setValueAtTime(0.0001, cuando);
+        g.gain.exponentialRampToValueAtTime(p.vol, cuando + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, cuando + dur);
+
+        osc.connect(filtro); filtro.connect(g); g.connect(Sonido.master);
+        osc.start(cuando);
+        osc.stop(cuando + dur + 0.02);
+      } catch (e) { return; }
+      silaba++;
+    }
   },
 
-  callar() {
-    try { window.speechSynthesis.cancel(); } catch (e) { /* nada */ }
-  },
+  callar() { /* las notas son cortas: no hay nada que cortar */ },
 
   alternar() {
     this.silenciada = !this.silenciada;
-    if (this.silenciada) this.callar();
     return this.silenciada;
   }
 };

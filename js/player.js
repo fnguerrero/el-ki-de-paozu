@@ -27,6 +27,8 @@ class Jugador extends Entidad {
     this.estela = [];      // posiciones viejas, para la estela del dash
     this.guardando = false;
     this.cargaGolpe = 0;
+    this.ritmo = 0;        // sube al machacar: acelera los golpes
+    this.tUltimoGolpe = 0;
   }
 
   get forma() { return TRANSFORMACIONES[this.ki.forma]; }
@@ -68,21 +70,52 @@ class Jugador extends Entidad {
       auraFuerte: (f.brillo || 0) > .6 || k,
       // Cuanto mas alta la forma, mas grande el aura. El Kaioken suma encima.
       fuerzaAura: (f.brillo || 0) + (k ? 0.45 : 0),
-      rayos: !!f.rayos || this.ki.kaioken > 1
+      rayos: !!f.rayos || this.ki.kaioken > 1,
+      electricidad: (f.electricidad || 0) + (this.ki.kaioken > 1 ? 0.4 : 0),
+      // Pelo largo y cola: capas que se dibujan detras del cuerpo
+      melena: f.melena ? { color: f.peloPix, sombra: f.peloPixS, largo: f.melena } : null,
+      cola: f.cola ? { color: f.cola, sombra: '#7b241c' } : null
     };
   }
 
   alTransformar(id) {
     const f = TRANSFORMACIONES[id];
-    Sonido.transformar(ORDEN_FORMAS.indexOf(id));
-    // El grito primero, la frase despues de que termine
+    const nivel = ORDEN_FORMAS.indexOf(id);
+    Sonido.transformar(nivel);
     const frases = FRASES.transformar[id];
-    if (frases) setTimeout(() => Voz.decir(fraseAlAzar(frases), 'goku', { urgente: true }), 700);
+    if (frases) setTimeout(() => Voz.decir(fraseAlAzar(frases), 'goku', { urgente: true }), 900);
     Sonido.Musica.intensa = id !== 'base';
-    if (f.auraPix) {
-      FX.chispas(this.x, this.y - 14, 26, f.auraPix);
-      FX.golpeFuerte(this.x, this.y - 14);
+    if (id === 'base') return;
+
+    // La transformacion es EL momento del juego: se frena el tiempo, tiembla
+    // todo y salen ondas desde el cuerpo. Cuanto mas alta la forma, mas dura.
+    const color = f.auraPix || PAL.dorado;
+    Juego.camaraLenta(70 + nivel * 12, 0.35);
+    FX.flashPantalla = 8 + nivel * 2;
+    FX.shake = 18 + nivel * 3;
+    FX.hitstop = Math.max(FX.hitstop, 10);
+
+    // Ondas expansivas, una atras de otra
+    for (let i = 0; i < 5 + nivel; i++) {
+      FX.destellos.push({
+        x: this.x, y: this.y - 18,
+        vida: 26 + i * 7, vidaMax: 26 + i * 7,
+        r: 26 + i * 16, color
+      });
     }
+    // El piso se levanta alrededor
+    for (let i = 0; i < 26 + nivel * 5; i++) {
+      const a = rnd(0, Math.PI * 2);
+      FX.particulas.push({
+        x: this.x + Math.cos(a) * rnd(4, 26),
+        y: this.y - rnd(0, 6),
+        vx: Math.cos(a) * rnd(0.6, 2.4),
+        vy: -rnd(1.2, 4.5),
+        vida: rndInt(24, 52), color: i % 3 === 0 ? PAL.hueso : color, grav: 0.09
+      });
+    }
+    FX.chispas(this.x, this.y - 20, 30, color);
+    FX.chispas(this.x, this.y - 20, 16, PAL.blanco);
   }
 
   // -------------------------------------------------------------------------
@@ -92,6 +125,10 @@ class Jugador extends Entidad {
     if (this.invuln > 0) this.invuln--;
     if (this.cdDash > 0) this.cdDash--;
     if (this.comboVentana > 0) this.comboVentana--; else this.comboIdx = 0;
+    // El ritmo de machaque se enfria si dejas de pegar
+    if (this.ritmo > 0 && this.t - this.tUltimoGolpe > 0.6) {
+      this.ritmo = Math.max(0, this.ritmo - dt * 1.5);
+    }
 
     this.inputTransformar();
     // Guardia: parado y agachado. Reduce el dano a la mitad pero no te deja
@@ -99,8 +136,9 @@ class Jugador extends Entidad {
     this.guardando = Input.guardia() && this.enSuelo && !this.volando && !this.ataque;
     // Se puede cargar Ki tambien en el aire: volando quedas suspendido
     // cargando, que es la imagen clasica de la serie.
-    this.cargando = Input.cargarKi() && !this.ataque &&
-                    (this.enSuelo || this.volando);
+    // Se puede cargar en cualquier lado y en movimiento: caminando, volando o
+    // quieto. Moverse mientras cargas te frena, pero no te impide cargar.
+    this.cargando = Input.cargarKi() && !this.ataque;
     this.actualizarCarga(dt);
     this.actualizarVuelo(dt);
 
@@ -161,7 +199,17 @@ class Jugador extends Entidad {
     else { this.vx *= 0.80; }
 
     this.disparoKi();
-    if (!this.volando) this.aplicarGravedad();
+    if (!this.volando) {
+      // El Ultra Instinto casi no pesa: se queda flotando entre saltos, como
+      // si la gravedad no lo agarrara del todo.
+      const gFactor = this.forma.gravedad;
+      if (gFactor) {
+        const g = (this.vy < 0 ? CFG.GRAV : CFG.GRAV_CAIDA) * gFactor;
+        this.vy = Math.min(this.vy + g, CFG.VEL_CAIDA_MAX * 0.45);
+      } else {
+        this.aplicarGravedad();
+      }
+    }
 
     const antesEnSuelo = this.enSuelo;
     const vyAntes = this.vy;
@@ -410,12 +458,14 @@ class Jugador extends Entidad {
       return;
     }
 
-    if (this.cargando || this.guardando) {
+    if (this.guardando) {
       this.vx *= 0.7;
     } else if (eje !== 0) {
-      const acel = (this.enSuelo ? CFG.ACEL : CFG.ACEL_AIRE) * m.vel;
+      // Cargando se camina, pero mas lento: el cuerpo esta juntando Ki
+      const frenoCarga = this.cargando ? 0.45 : 1;
+      const acel = (this.enSuelo ? CFG.ACEL : CFG.ACEL_AIRE) * m.vel * frenoCarga;
       this.vx += eje * acel;
-      this.vx = clamp(this.vx, -velMax, velMax);
+      this.vx = clamp(this.vx, -velMax * frenoCarga, velMax * frenoCarga);
       this.facing = eje;
       if (this.enSuelo && Math.abs(this.vx) > velMax * .8 && Math.floor(this.t * 12) % 3 === 0) {
         FX.polvo(this.x - this.facing * 4, this.y);
@@ -484,6 +534,19 @@ class Jugador extends Entidad {
   // ---------------------------------------------------------------- ataques
   iniciarAtaque(pesado) {
     if (this.ataque && !pesado) return;
+
+    // Machacar acelera: cada golpe encadenado rapido sube el ritmo, y el
+    // ritmo acorta la duracion de los ataques. Asi el combo arranca pesado
+    // y termina siendo una lluvia de golpes.
+    const ahora = this.t;
+    if (ahora - this.tUltimoGolpe < 0.55) {
+      this.ritmo = Math.min(1, this.ritmo + 0.22);
+    } else {
+      this.ritmo = 0;
+    }
+    this.tUltimoGolpe = ahora;
+    // 1 = normal, 0.5 = al doble de velocidad
+    const vel = 1 - this.ritmo * 0.5;
     if (pesado) {
       // Golpe pesado: lento, pero atraviesa la guardia y manda a volar
       this.ataque = {
@@ -493,11 +556,22 @@ class Jugador extends Entidad {
       this.vx += this.facing * 1.4;
       return;
     }
+    const escalar = (a) => {
+      // Se acorta todo junto: duracion y ventana activa, asi el golpe sigue
+      // conectando igual pero sale mas rapido.
+      a.dur = Math.max(7, Math.round(a.dur * vel));
+      a.activo = [
+        Math.max(2, Math.round(a.activo[0] * vel)),
+        Math.max(4, Math.round(a.activo[1] * vel))
+      ];
+      return a;
+    };
+
     if (!this.enSuelo) {
-      this.ataque = {
+      this.ataque = escalar({
         tipo: 'patada', frame: 0, dur: 20, activo: [4, 13],
         golpeados: new Set(), dano: 14, aereo: true
-      };
+      });
       this.vy = Math.min(this.vy, 1.2);
     } else {
       // La ventana antes de `activo` es la anticipacion: sin esos frames el
@@ -507,10 +581,15 @@ class Jugador extends Entidad {
         { tipo: 'punch2', dur: 19, activo: [5, 11], dano: 12 },
         { tipo: 'patada', dur: 26, activo: [7, 16], dano: 20, final: true }
       ][this.comboIdx];
-      this.ataque = Object.assign({ frame: 0, golpeados: new Set() }, combo);
+      this.ataque = escalar(Object.assign({ frame: 0, golpeados: new Set() }, combo));
       this.comboIdx = (this.comboIdx + 1) % 3;
       this.comboVentana = 34;
       this.vx += this.facing * 0.9;
+      // Chispas de velocidad cuando ya vas rapido
+      if (this.ritmo > 0.5) {
+        FX.chispas(this.x + this.facing * 10, this.y - 20, 3,
+                   this.aspecto().aura || PAL.blanco);
+      }
     }
   }
 
@@ -522,12 +601,22 @@ class Jugador extends Entidad {
 
     if (a.frame >= a.activo[0] && a.frame <= a.activo[1]) {
       const m = this.ki.mult();
-      const alcance = a.tipo === 'patada' ? 20 : 16;
+      // El desplazamiento de aire crece con la forma: en base el golpe llega
+      // hasta donde llega el brazo, en Ultra Instinto barre medio metro mas.
+      const fuerzaAire = clamp((m.dano - 1) / 7, 0, 1);
+      const alcance = (a.tipo === 'patada' ? 20 : 16) + fuerzaAire * 26;
       const zona = {
         x: this.facing > 0 ? this.x + 3 : this.x - 3 - alcance,
         y: this.y - this.h + (a.tipo === 'patada' && !this.enSuelo ? 8 : 3),
         w: alcance, h: a.tipo === 'patada' ? 14 : 16
       };
+
+      // Onda de aire en el primer frame activo
+      if (a.frame === a.activo[0]) {
+        FX.ondaAire(this.x + this.facing * 14, this.y - 20, this.facing,
+                    fuerzaAire, this.aspecto().aura || PAL.blanco);
+        if (fuerzaAire > 0.35) Sonido.swoosh();
+      }
 
       Juego.enemigos.forEach(e => {
         if (e.muerto || a.golpeados.has(e)) return;
@@ -540,6 +629,9 @@ class Jugador extends Entidad {
           stun: a.final ? 26 : 12
         });
         Sonido.golpe(a.rompeGuardia ? 'pesado' : (a.tipo === 'patada' ? 'patada' : 'puno'));
+        // Con el combo rapido el hitstop se acorta: si no, cada impacto
+        // congelaba el juego y la lluvia de golpes se sentia lenta.
+        if (this.ritmo > 0.4) FX.hitstop = Math.min(FX.hitstop, 2);
         FX.estela(this.x + this.facing * 14, this.y - 20, this.facing);
         if (a.final) {
           Sonido.golpeFuerte();
@@ -652,8 +744,9 @@ class Jugador extends Entidad {
     if (this.invuln > 0 || this.muerto) return;
     const m = this.ki.mult();
     if (m.esquiva > 0 && Math.random() < m.esquiva) {
-      FX.texto(this.x, this.y - 40, 'ESQUIVA', PAL.blanco);
-      this.invuln = 12;
+      // Esquivar en Ultra Instinto es el momento lindo: el tiempo se frena,
+      // el cuerpo se corre solo y queda una silueta atras.
+      this.esquivar(dirX);
       return;
     }
     // La guardia parte el dano al medio y te deja casi sin aturdimiento
@@ -680,6 +773,22 @@ class Jugador extends Entidad {
       Voz.decir(fraseAlAzar(FRASES.golpeado), 'goku', { espera: 2600, corta: true });
     }
     if (this.hp <= 0) { this.hp = 0; this.muerto = true; }
+  }
+
+  // El cuerpo se mueve solo: se corre del golpe, deja estela y frena el
+  // tiempo un instante para que se vea.
+  esquivar(dirX) {
+    const color = this.aspecto().aura || PAL.blanco;
+    this.invuln = 18;
+    // Se aparta del golpe, hacia el lado contrario y un poco hacia arriba
+    this.vx += -dirX * 2.2;
+    this.vy = -1.4;
+    Juego.camaraLenta(16, 0.22);
+    FX.texto(this.x, this.y - 44, 'ESQUIVA', color);
+    FX.chispas(this.x, this.y - 16, 10, color);
+    // Silueta que queda donde estaba
+    FX.destellos.push({ x: this.x, y: this.y - 16, vida: 14, vidaMax: 14, r: 14, color });
+    Sonido.swoosh();
   }
 
   caidaAlVacio() {
@@ -762,7 +871,9 @@ class Jugador extends Entidad {
       return;
     }
     if (this.guardando) { this.pose = 'charge'; return; }
-    if (this.cargando) { this.pose = 'charge'; return; }
+    // Cargando quieto se ve la pose de carga; cargando en movimiento se ve
+    // caminar, porque si no parece que se desliza.
+    if (this.cargando && Math.abs(this.vx) < 0.3) { this.pose = 'charge'; return; }
     if (this.volando) {
       if (this.cargando) { this.pose = 'charge'; return; }
       
@@ -836,7 +947,9 @@ class Jugador extends Entidad {
       // Cargar hace crecer el aura hasta el doble
       fuerzaAura: a.fuerzaAura + (this.cargando ? clamp(this.tiempoCargando / 1.6, 0, 1) * 0.9 : 0)
                               + (this.volando ? 0.25 : 0),
-      rayos: a.rayos || (this.cargando && this.tiempoCargando > 1.4)
+      rayos: a.rayos || (this.cargando && this.tiempoCargando > 1.4),
+      electricidad: a.electricidad + (this.cargando ? 0.5 : 0),
+      melena: a.melena, cola: a.cola
     });
 
     // Esfera de carga del Kamehameha

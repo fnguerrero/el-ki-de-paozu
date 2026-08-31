@@ -176,6 +176,7 @@ const FX = {
   particulas: [],
   textos: [],
   destellos: [],
+  ondas: [],
   shake: 0,
   hitstop: 0,
   flashPantalla: 0,
@@ -220,6 +221,32 @@ const FX = {
       this.particulas.push({
         x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.4,
         vida: rndInt(10, 22), color, grav: 0.08
+      });
+    }
+  },
+
+  // Onda de aire del golpe: arcos que se alejan del puño. `alcance` sale de
+  // la transformacion, asi que cuanto mas fuerte estas, mas lejos llega el
+  // desplazamiento de aire.
+  ondaAire(x, y, dir, alcance, color) {
+    const pasos = Math.round(3 + alcance * 4);
+    for (let i = 0; i < pasos; i++) {
+      this.ondas.push({
+        x: x + dir * i * 4, y,
+        dir, vida: 12 + i * 2, vidaMax: 12 + i * 2,
+        alto: 10 + alcance * 5,
+        largo: 6 + alcance * 8,
+        vel: (3.2 + alcance * 2.6) * dir,
+        color: color || PAL.blanco,
+        retraso: i * 2
+      });
+    }
+    // Polvo levantado por delante
+    for (let i = 0; i < Math.round(4 + alcance * 6); i++) {
+      this.particulas.push({
+        x: x + dir * rnd(6, 20 + alcance * 30), y: y + rnd(-8, 10),
+        vx: dir * rnd(1.5, 3 + alcance * 2), vy: rnd(-0.8, 0.5),
+        vida: rndInt(8, 18), color: PAL.hueso, grav: 0.02
       });
     }
   },
@@ -351,6 +378,11 @@ const FX = {
     });
     this.textos = this.textos.filter(t => { t.y -= .35; return --t.vida > 0; });
     this.destellos = this.destellos.filter(d => --d.vida > 0);
+    this.ondas = this.ondas.filter(o => {
+      if (o.retraso > 0) { o.retraso--; return true; }
+      o.x += o.vel;
+      return --o.vida > 0;
+    });
     if (this.shake > 0) this.shake -= 0.6;
     if (this.shake < 0) this.shake = 0;
     if (this.flashPantalla > 0) this.flashPantalla--;
@@ -368,6 +400,25 @@ const FX = {
       Px.aro(d.x - camx, d.y - camy, r, PAL.blanco);
       if (t > .5) Px.aro(d.x - camx, d.y - camy, Math.max(1, r - 3), PAL.dorado);
     });
+    // Ondas de aire: arcos verticales que se abren al alejarse
+    this.ondas.forEach(o => {
+      if (o.retraso > 0) return;
+      const f = o.vida / o.vidaMax;
+      const alto = Math.round(o.alto * (1.4 - f * 0.6));
+      const px = Math.round(o.x - camx), py = Math.round(o.y - camy);
+      const color = f > 0.6 ? PAL.blanco : o.color;
+      // Arco de 2px de grosor: con 1px y puntos salteados no se veia nada
+      for (let k = -alto; k <= alto; k++) {
+        const curva = Math.round(Math.sqrt(Math.max(0, alto * alto - k * k)) * 0.45);
+        const x0 = px - o.dir * curva;
+        Px.rect(x0, py + k, 2, 1, color);
+        // Nucleo blanco en el centro del arco
+        if (Math.abs(k) < alto * 0.4 && f > 0.35) {
+          Px.rect(x0 - o.dir * 2, py + k, 1, 1, PAL.blanco);
+        }
+      }
+    });
+
     this.textos.forEach(t => {
       if (t.esc === 2) {
         // Numero grande: se dibuja 4 veces desplazado, engorda el trazo
@@ -381,7 +432,7 @@ const FX = {
   },
 
   limpiar() {
-    this.particulas = []; this.textos = []; this.destellos = [];
+    this.particulas = []; this.textos = []; this.destellos = []; this.ondas = [];
     this.shake = 0; this.hitstop = 0; this.flashPantalla = 0;
   }
 };

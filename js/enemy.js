@@ -360,6 +360,8 @@ class Enemigo extends Entidad {
   }
 
   tocarJugador(jug, dAbs) {
+    // En Ultra Instinto el cuerpo lo atraviesa: no hay golpe por contacto.
+    if (jug.forma && jug.forma.atraviesa) return;
     if (this.cdGolpe > 0 || jug.invuln > 0 || jug.muerto) return;
     if (dAbs < (this.w + jug.w) / 2 + 2 && Math.abs(jug.y - this.y) < this.h) {
       this.cdGolpe = 40;

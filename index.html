@@ -7,6 +7,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dragon Ball — El Ki de Paozu</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icono-192.png">
+<meta name="theme-color" content="#F0A324">
 </head>
 <body>
 <div id="wrap">
@@ -43,6 +47,9 @@
     document.write('<scr' + 'ipt src="' + f + bust + '"><\/scr' + 'ipt>');
   });
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 </script>
 </body>
 </html>

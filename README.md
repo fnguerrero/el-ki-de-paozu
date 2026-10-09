@@ -9,7 +9,7 @@ Fan game personal, sin fines comerciales.
 ## Correr
 
 ```bash
-python -m http.server 8134 --directory "W:/Working Folder Personal/DragonBall"
+python -m http.server 8134 --directory "W:/Working Folder Personal/Juegos/DragonBall"
 ```
 
 Después abrí <http://localhost:8134>. Con doble clic en `index.html` también anda.
